@@ -1,6 +1,15 @@
 const express = require("express");
 const expressLayouts = require("express-ejs-layouts");
-const { loadContact, findContact } = require("./utils/contacts");
+const session = require("express-session");
+const cookieParser = require("cookie-parser");
+const flash = require("connect-flash");
+const {
+  loadContacts,
+  findContact,
+  addContact,
+  cekDuplikat,
+} = require("./utils/contacts");
+const { body, validationResult, check } = require("express-validator");
 
 const app = express();
 const port = 4000;
@@ -8,10 +17,21 @@ const port = 4000;
 // View Engine : EJS
 app.set("view engine", "ejs");
 
-// Third-party Middleware
-app.use(expressLayouts);
-// Build-in Middleware
-app.use(express.static("public"));
+app.use(expressLayouts); // Third-party Middleware
+app.use(express.static("public")); // Build-in Middleware
+app.use(express.urlencoded({ extended: true })); // Build-in Middleware
+
+// Konfigurasi Flash
+app.use(cookieParser("secret"));
+app.use(
+  session({
+    cookie: { maxAge: 6000 },
+    secret: "secret",
+    resave: true,
+    saveUninitialized: true,
+  })
+);
+app.use(flash());
 
 app.get("/", (req, res) => {
   // res.sendFile("./index.html", { root: __dirname });
@@ -33,7 +53,7 @@ app.get("/", (req, res) => {
   res.render("index", {
     nama: "Aditya Pratama",
     title: "Halaman Home",
-    mahasiswa: mahasiswa,
+    mahasiswa,
     layout: "layouts/main",
   });
 });
@@ -43,14 +63,59 @@ app.get("/about", (req, res) => {
 });
 
 app.get("/contact", (req, res) => {
-  const contacts = loadContact();
+  const contacts = loadContacts();
 
   res.render("contact", {
     title: "Halaman Contact",
     layout: "layouts/main",
     contacts,
+    msg: req.flash("msg"),
   });
 });
+
+// Tambah Data Contact
+app.get("/contact/add", (req, res) => {
+  res.render("add-contact", {
+    title: "Tambah Data Contact",
+    layout: "layouts/main",
+  });
+});
+
+// Process Data Contact
+app.post(
+  "/contact",
+  [
+    body("nama").custom((value) => {
+      const duplikat = cekDuplikat(value);
+      if (duplikat) {
+        throw new Error("Nama Contact Sudah Digunakan!");
+      }
+      return true;
+    }),
+    check("email", "Email Tidak Valid").isEmail(),
+    check("nohp", "No Handphone Tidak Valid").isMobilePhone("id-ID"),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      // return res.status(400).json({ errors: errors.array() });
+      res.render("add-contact", {
+        title: "Tambah Data Contact",
+        layout: "layouts/main",
+        errors: errors.array(),
+      });
+    } else {
+      addContact(req.body);
+
+      // Flash Message
+      req.flash("msg", "Data Berhasil DiTambahkan!");
+
+      res.redirect("/contact");
+    }
+  }
+);
+
+// Detail Contact
 app.get("/contact/:nama", (req, res) => {
   const contact = findContact(req.params.nama);
 
